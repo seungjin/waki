@@ -1,7 +1,9 @@
 use crate::{
     bindings::wasi::http::{
         outgoing_handler,
-        types::{IncomingRequest, OutgoingBody, OutgoingRequest, RequestOptions},
+        types::{
+            IncomingRequest, OutgoingBody, OutgoingRequest, RequestOptions,
+        },
     },
     body::Body,
     header::HeaderMap,
@@ -61,10 +63,17 @@ impl RequestBuilder {
                 ),
                 None => ("", ""),
             };
-            let mut serializer = form_urlencoded::Serializer::new(query.to_string());
+            let mut serializer =
+                form_urlencoded::Serializer::new(query.to_string());
             serializer.extend_pairs(args);
-            match PathAndQuery::try_from(format!("{}?{}", path, serializer.finish())) {
-                Ok(path_and_query) => req.uri.path_and_query = Some(path_and_query),
+            match PathAndQuery::try_from(format!(
+                "{}?{}",
+                path,
+                serializer.finish()
+            )) {
+                Ok(path_and_query) => {
+                    req.uri.path_and_query = Some(path_and_query)
+                }
                 Err(e) => err = Some(e.into()),
             }
         }
@@ -122,7 +131,9 @@ pub struct Request {
 impl TryFrom<IncomingRequest> for Request {
     type Error = ErrorCode;
 
-    fn try_from(req: IncomingRequest) -> std::result::Result<Self, Self::Error> {
+    fn try_from(
+        req: IncomingRequest,
+    ) -> std::result::Result<Self, Self::Error> {
         let method = req.method();
 
         let mut parts = Parts::default();
@@ -201,8 +212,9 @@ impl Request {
     pub fn query(&self) -> HashMap<String, String> {
         match &self.uri.path_and_query {
             Some(path_and_query) => {
-                let query_pairs =
-                    form_urlencoded::parse(path_and_query.query().unwrap_or_default().as_bytes());
+                let query_pairs = form_urlencoded::parse(
+                    path_and_query.query().unwrap_or_default().as_bytes(),
+                );
                 query_pairs.into_owned().collect()
             }
             None => HashMap::default(),
@@ -245,13 +257,18 @@ impl Request {
             let request_body = outgoing_body
                 .write()
                 .map_err(|_| anyhow!("outgoing request write failed"))?;
-            request_body.blocking_write_and_flush(&body)?;
+            let chunks = body.chunks(4096);
+            for chunk in chunks {
+                request_body.blocking_write_and_flush(&body).unwrap();
+            }
         }
         OutgoingBody::finish(outgoing_body, None)?;
 
         let future_response = outgoing_handler::handle(req, Some(options))?;
         let incoming_response = match future_response.get() {
-            Some(result) => result.map_err(|()| anyhow!("response already taken"))?,
+            Some(result) => {
+                result.map_err(|()| anyhow!("response already taken"))?
+            }
             None => {
                 let pollable = future_response.subscribe();
                 pollable.block();
